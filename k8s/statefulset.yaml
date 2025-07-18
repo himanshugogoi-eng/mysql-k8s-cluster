@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: "mysql"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          args: ["--defaults-file=/config/my.cnf"]
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: root-password
+          ports:
+            - containerPort: 3306
+              name: mysql
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: config-volume
+              mountPath: /config
+      initContainers:
+        - name: init-mysql-config
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              index=$(hostname | awk -F '-' '{print $NF}')
+              cp /config-template/my.cnf /config/my.cnf
+              echo "server-id=$((index + 1))" >> /config/my.cnf
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+            - name: configmap-volume
+              mountPath: /config-template
+      volumes:
+        - name: configmap-volume
+          configMap:
+            name: mysql-config
+        - name: config-volume
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
